@@ -144,9 +144,12 @@ def gap_words(dim: str, t: dict) -> str:
 # Strength, rank and the claim sentence
 # ---------------------------------------------------------------------------
 def strength(f: dict) -> tuple[str, float]:
-    """Wireframe 2b/2c's 'How strong is this?'. A cell that cannot reach the FDR
-    threshold is not scored at all rather than scored low -- being the worst of one
-    is not evidence, and a bar would imply it was."""
+    """Wireframe 2b/2c's 'How strong is this?'.
+
+    The scientific score stays the same, but the UI wording is made less blunt for a
+    reviewer-facing screen: "Weak" reads like a judgment on the file, while "Low
+    signal" describes the evidence quality without over-claiming.
+    """
     if f.get("cell_power") == "underpowered" or (f.get("cell_size") or 0) < 2:
         return "Not scored", 0.0
     p = f.get("rank_p_value")
@@ -157,11 +160,14 @@ def strength(f: dict) -> tuple[str, float]:
     # The bar is 1 - p, clamped. It is a presentation of the rank p-value and nothing
     # more -- the labels are cut points on that one number, not a second score.
     s = max(0.0, min(1.0, 1.0 - float(p)))
-    return ("Strong" if s >= 0.80 else "Moderate" if s >= 0.50 else "Weak"), s
+    return ("High signal" if s >= 0.80 else "Medium signal" if s >= 0.50 else "Low signal"), s
 
 
 def ordinal(n: int) -> str:
-    return {1: "best", 2: "2nd best", 3: "3rd best"}.get(n, f"{n}th best")
+    if n == 1:
+        return "best"
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix} best"
 
 
 def claim(f: dict, reasons: dict) -> str:

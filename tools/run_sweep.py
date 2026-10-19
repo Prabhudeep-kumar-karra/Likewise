@@ -29,6 +29,34 @@ CONTROL_POINTS = {
 }
 
 
+def tolerance_targets(raw: dict) -> dict[str, str]:
+    """Return feature -> config section for a tolerance sweep.
+
+    The materiality schema changed: newer specs may keep `control_features` empty and
+    carry the same tolerances under `residual_risk`. The sweep should remain valid for
+    both the legacy and current layouts.
+    """
+    out: dict[str, str] = {}
+    for feat in CONTROL_POINTS:
+        if feat in raw.get("control_features", {}):
+            out[feat] = "control_features"
+        elif feat in raw.get("residual_risk", {}):
+            out[feat] = "residual_risk"
+    return out
+
+
+def operating_point(spec) -> dict[str, float]:
+    raw = spec.raw
+    out: dict[str, float] = {}
+    for feat in CONTROL_POINTS:
+        cfg = raw.get("control_features", {}).get(feat)
+        if cfg is None:
+            cfg = raw.get("residual_risk", {}).get(feat)
+        if cfg is not None and "tolerance" in cfg:
+            out[feat] = float(cfg["tolerance"])
+    return out
+
+
 def _write(dirpath, mver, mat, bud):
     with open(f"{dirpath}/materiality/{mver}.yaml", "w") as fh:
         yaml.safe_dump(mat, fh, sort_keys=False)
@@ -49,13 +77,14 @@ def point(tmp, mver, mat, bud, files, lei, year, quick_B):
         return {"refused": e.kind, "failures": e.failures}
     c = res["summary"]["counts"]
     qs = sorted(f["q_value"] for f in res["findings"] if f.get("q_value") is not None)
+    post_fdr = c.get("findings_after_fdr", c.get("denials_with_finding", 0))
     return {
         "matched": c["denials_with_matched_comparator"],
         "matched_fraction": (round(c["denials_with_matched_comparator"] / c["denials_non_exempt"], 4)
                              if c.get("denials_non_exempt") else None),
         "testable": c["denials_testable_by_code_marginal"],
         "candidates": c["denials_with_finding"],
-        "post_fdr": c["findings_after_fdr"],
+        "post_fdr": post_fdr,
         "median_q": round(qs[len(qs) // 2], 4) if qs else None,
         "tripwires": [t["tripwire"] for t in res["summary"].get("tripwire_breaches", [])],
     }
@@ -87,8 +116,7 @@ def main() -> int:
             base.budget.raw["dimensions"]["debt_to_income_ratio"]["decisive_threshold"],
         "property_value":
             base.budget.raw["dimensions"]["property_value"]["decisive_threshold"],
-        "loan_amount": base.raw["control_features"]["loan_amount"]["tolerance"],
-        "income": base.raw["control_features"]["income"]["tolerance"],
+        **operating_point(base),
     }
 
     out = {"scan_id": a.scan_id, "spec_version": mver, "snapshot_id": base.snapshot_id,
@@ -110,13 +138,16 @@ def main() -> int:
                                   "points": rows}
 
     for feat, pts in CONTROL_POINTS.items():
+        section = tolerance_targets(base.raw).get(feat)
+        if section is None:
+            continue
         rows = []
         for v in pts:
             mat, bud = copy.deepcopy(base.raw), copy.deepcopy(base.budget.raw)
-            mat["control_features"][feat]["tolerance"] = v
+            mat[section][feat]["tolerance"] = v
             r = point(tmp, mver, mat, bud, files, lei, year, quick_B)
             r["value"] = v
-            r["is_operating"] = (v == operating[feat])
+            r["is_operating"] = (v == operating.get(feat))
             rows.append(r)
             print(f"  {feat} {v}: {json.dumps({k: r[k] for k in r if k != 'failures'})}")
         out["dimensions"][feat] = {"kind": "control_tolerance", "unit": "relative",

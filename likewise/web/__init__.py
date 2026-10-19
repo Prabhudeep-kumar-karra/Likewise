@@ -53,6 +53,7 @@ from .pages.finding import finding_page
 from .pages.queue import finding_row, queue_page
 from .pages.scans import scans_page
 from .pages.spec import spec_page
+from .pages.statistics import statistics_page
 from .pages.sweep import sweep_page
 from .specfiles import read_versions
 
@@ -63,6 +64,6 @@ __all__ = [
     "TRIPWIRE_MEANING", "VERDICT", "blocked_banner", "claim", "controls_page",
     "corners", "coverage_page", "e", "finding_page", "finding_row", "fmt_margin",
     "gap_short", "gap_words", "money", "ordinal", "page", "queue_page",
-    "read_versions", "scans_page", "spec_page", "strength", "sweep_page",
+    "read_versions", "scans_page", "spec_page", "statistics_page", "strength", "sweep_page",
     "tripwire_chip", "verdict_counts",
 ]

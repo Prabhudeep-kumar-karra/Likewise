@@ -41,7 +41,7 @@ def queue_page(sid: str, rec: dict, summary: dict, findings: list[dict],
     nxt = next((f for f in findings if bucket(f) == "needs"), None)
 
     tabs = [("needs", "Needs a decision", need), ("reviewed", "Reviewed", done),
-            ("unscored", "Not enough to compare",
+          ("unscored", "Not enough for significance",
              sum(1 for f in findings if bucket(f) == "unscored")),
             ("all", "All findings", total)]
     tabhtml = "".join(
@@ -108,6 +108,7 @@ def queue_page(sid: str, rec: dict, summary: dict, findings: list[dict],
   <span class="seg scroll-x">{tabhtml}</span>
   <span class="spacer"></span>
   <span class="muted" style="font-size:12.5px">Strongest evidence first</span>
+  <a class="mono" href="/ui/scans/{sid}/statistics">P-values &amp; scan z →</a>
 </div>
 
 {rows}
@@ -167,13 +168,21 @@ def finding_row(sid: str, f: dict, disp: dict, reasons: dict) -> str:
     # page. An unscored pair gets no meter bar at all -- a bar at any width would imply a
     # score was computed and came out low, when none was computed.
     rail = f"""<div class="rail">
-  <div class="kicker">HOW STRONG IS THIS?</div>
+  <div class="kicker" style="display:flex;align-items:center;gap:6px">
+    HOW STRONG IS THIS?
+    <span role="img" tabindex="0"
+      title="Relative rank signal based on the p-value within a comparable set; it is not a judgment about whether the denial reason is valid."
+      aria-label="Relative rank signal based on the p-value within a comparable set; it is not a judgment about whether the denial reason is valid."
+      style="display:inline-grid;place-items:center;width:15px;height:15px;border:1px solid currentColor;border-radius:50%;font:600 10px/1 var(--font-body);cursor:help">i</span>
+  </div>
   <div style="font:600 22px/1.1 var(--font-heading);margin-bottom:7px;
        {'color:var(--color-neutral-500)' if unscored else ''}">{e(s_label)}</div>
   {'' if unscored else f'<div class="meter" style="height:9px;margin-bottom:6px"><i style="width:{s_frac * 100:.0f}%"></i></div>'}
   <div class="muted" style="font:12px/1.5 var(--font-body);margin-bottom:12px">
-    {('Listed for completeness. Excluded from the significance test — being the worst of '
-      'a very small group is not evidence.') if unscored else
+    {(f'This group has {f.get("cell_size", 0)} records, including the denied application. '
+      f'Its smallest possible rank p-value is {f.get("min_attainable_p", "not available")}; '
+      'the group cannot meet the false-discovery threshold. You can still check '
+      'the pair in your own files.') if unscored else
      f'The {ordinal(int(f.get("rank_in_cell") or 1))} comparison out of {f.get("cell_size", 0)} similar files.'}
   </div>
   <a class="btn btn-secondary block" href="/ui/scans/{sid}/findings/{e(f['finding_id'])}">Open and review</a>

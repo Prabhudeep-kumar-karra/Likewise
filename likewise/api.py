@@ -556,6 +556,15 @@ def ui_sweep(sid: str, p: dict = Depends(ui_principal)):
                                        STORE.get_json(f"scans/{sid}/sweep.json")))
 
 
+@app.get("/ui/scans/{sid}/statistics", response_class=HTMLResponse)
+def ui_statistics(sid: str, p: dict = Depends(ui_principal)):
+    rec, summary, ctrl = _load(sid)
+    if rec.get("status") == "complete" and not STORE.exists(f"scans/{sid}/sweep.json"):
+        raise HTTPException(409, "sweep absent for this scan; statistics are not servable")
+    audit(p, "GET /ui/statistics", scan_id=sid)
+    return HTMLResponse(web.statistics_page(sid, rec, summary, _findings(sid), ctrl))
+
+
 @app.get("/ui/scans/{sid}/controls", response_class=HTMLResponse)
 def ui_controls(sid: str, p: dict = Depends(ui_principal)):
     rec, summary, ctrl = _load(sid)

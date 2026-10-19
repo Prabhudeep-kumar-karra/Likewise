@@ -143,6 +143,60 @@ def test_rendered_queue_carries_no_forbidden_key(spec):
     low = html.lower()
     for k in FORBIDDEN_KEYS:
         assert k.lower() not in low
+    assert "/ui/scans/scn_x/statistics" in html
+
+
+def test_statistics_page_separates_pair_rank_p_values_from_scan_z():
+    findings = [dict(_sample_finding(), finding_id="fnd_" + f"{i:032d}"[-32:],
+                     rank_p_value=0.2 + i / 100, cell_power=("underpowered" if i == 23 else "adequate"),
+                     min_attainable_p=(0.25 if i == 23 else 0.01)) for i in range(24)]
+    summary = {"scan_level_test": {"z": -18.0085, "p": 1.0, "cells_used": 522},
+               "tripwire_breaches": []}
+    html = web.statistics_page("scn_x", {"analysis_status": "exploratory"},
+                               summary, findings, None)
+    assert "WITHIN-CELL RANK P-VALUES · 24 CASES" in html
+    assert "no per-case z-scores are computed" in html
+    assert "OBSERVED z = -18.01" in html
+    assert "one-sided p-value" in html and "1.0" in html
+    assert "Not enough for significance" in html
+    assert html.count("/ui/scans/scn_x/findings/") == 24
+
+
+def test_statistics_route_serves_the_stored_scan(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    from likewise import api
+    from likewise.store import LocalStore
+
+    monkeypatch.setattr(api, "STORE", LocalStore(tmp_path))
+    sid = "scn_statistics_test"
+    finding = dict(_sample_finding(), finding_id="fnd_statistics_test",
+                   rank_p_value=0.5, cell_power="adequate")
+    api.STORE.put_json(f"scans/{sid}/scan.json", {"scan_id": sid, "status": "complete"})
+    api.STORE.put_json(f"scans/{sid}/summary.json", {
+        "scan_level_test": {"z": -2.0, "p": 0.98, "cells_used": 12},
+        "tripwire_breaches": []})
+    api.STORE.put_json(f"scans/{sid}/findings.json", [finding])
+    api.STORE.put_json(f"scans/{sid}/sweep.json", {})
+    client = TestClient(api.app, raise_server_exceptions=False)
+
+    response = client.get(f"/ui/scans/{sid}/statistics", cookies={"lw_session": "dev-read"})
+    assert response.status_code == 200
+    assert "P-values and scan-level z" in response.text
+    assert "OBSERVED z = -2" in response.text
+
+
+def test_underpowered_pair_explains_significance_limit_without_hiding_pair():
+    finding = dict(_sample_finding(), cell_power="underpowered", cell_size=4,
+                   min_attainable_p=0.25)
+    queue = web.queue_page(
+        "scn_x", {"activity_year": 2025, "lei": "rec_x", "label": "L",
+                  "spec_version": "1.4.0"},
+        {"counts": {}, "tripwire_breaches": []}, [finding], {},
+        {4: {"label": "Collateral"}}, None, "unscored", 25, 0)
+    assert "Not enough for significance" in queue
+    assert "smallest possible rank p-value is 0.25" in queue
+    assert "You can still check the pair in your own files" in queue
+    assert f"/ui/scans/scn_x/findings/{finding['finding_id']}" in queue
 
 
 def test_renderer_escapes_stored_text():
@@ -166,6 +220,19 @@ def test_margin_is_shown_as_magnitude_not_a_signed_number():
          "decisive_threshold": 7.1, "outcome": "not_supported"}
     assert web.gap_short("combined_loan_to_value_ratio", t) == "8.77 pp worse"
     assert "-" not in web.gap_short("combined_loan_to_value_ratio", t)
+
+
+def test_strength_labels_are_more_review_friendly():
+    f = dict(_sample_finding(), cell_power="adequate", cell_size=10, rank_p_value=0.75)
+    assert web.strength(f) == ("Low signal", pytest.approx(0.25))
+
+
+@pytest.mark.parametrize("rank, expected", [
+    (1, "best"), (2, "2nd best"), (3, "3rd best"), (11, "11th best"),
+    (12, "12th best"), (13, "13th best"), (21, "21st best"), (82, "82nd best"),
+])
+def test_rank_ordinals_are_grammatical(rank, expected):
+    assert web.ordinal(rank) == expected
 
 
 def test_unscored_cells_get_no_strength_bar():
@@ -196,6 +263,18 @@ def test_findings_and_queue_both_refuse_without_a_sweep(monkeypatch, tmp_path):
             p = ROOT / "data" / "store" / "scans" / sid / k
             if p.exists():
                 p.unlink()
+
+
+def test_run_sweep_falls_back_to_residual_risk_tolerances_when_control_features_are_empty():
+    from likewise import specs
+    from tools import run_sweep
+
+    base = specs.load("specs", version="1.4.0")
+    operating = run_sweep.operating_point(base)
+
+    assert base.raw["control_features"] == {}
+    assert operating["loan_amount"] == 0.10
+    assert operating["income"] == 0.10
 
 
 def test_ui_requires_a_credential_and_offers_sign_in(monkeypatch):

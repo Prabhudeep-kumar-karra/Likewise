@@ -159,10 +159,12 @@ def finding_page(sid: str, rec: dict, summary: dict, f: dict, disp: dict,
     # would answer a question the reader did not ask.
     if s_label == "Not scored":
         strength_words = (
-            "This cell holds %d comparable approved files. The smallest p-value a cell of "
-            "that size can produce is 1 in %d, which cannot clear the false-discovery "
-            "threshold however extreme the gap looks. Being the worst of a small group is "
-            "not evidence, so the pair is listed and left unscored." % (cell_size, cell_size or 1))
+        "This comparison group has %d records, including the denied application. Its "
+        "smallest possible rank p-value is %s, which cannot clear the scan's "
+        "false-discovery threshold. The pairwise gap can still be checked in your "
+        "own files; this status means only that the group is too small or tied to "
+        "support statistical significance." % (
+          cell_size, f.get("min_attainable_p", "not available")))
     else:
         strength_words = _null_words(summary)
     next_btn = ('<a class="btn btn-ghost" href="/ui/scans/' + sid + '/findings/' + e(nxt or "")

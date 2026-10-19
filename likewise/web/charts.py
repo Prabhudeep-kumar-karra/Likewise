@@ -164,3 +164,92 @@ def _null_chart(nullj: dict) -> str:
     return "".join(parts)
 
 
+def _rank_p_chart(findings: list[dict], sid: str) -> str:
+    """Horizontal dot plot of stored within-cell rank p-values, in queue order."""
+    W, L, R, T, row_h, B = 900, 130, 70, 28, 25, 42
+    H = T + row_h * len(findings) + B
+
+    def px(value):
+        return L + (W - L - R) * max(0.0, min(1.0, value))
+
+    parts = ['<svg viewBox="0 0 %d %d" class="chart" role="img" '
+             'aria-label="Within-cell rank p-values for %d findings">' % (W, H, len(findings))]
+    for tick in (0.0, 0.25, 0.5, 0.75, 1.0):
+        x = px(tick)
+        parts.append('<line x1="%.1f" y1="%d" x2="%.1f" y2="%d" stroke="#b7b7ba" '
+                     'stroke-dasharray="3 4"/>' % (x, T - 8, x, H - B))
+        parts.append('<text x="%.1f" y="%d" text-anchor="middle" '
+                     'font-family="ui-monospace,Menlo,monospace" font-size="11" '
+                     'fill="#5d5d60">%.2g</text>' % (x, H - 15, tick))
+    for index, finding in enumerate(findings):
+        y = T + index * row_h + row_h / 2
+        fid = str(finding.get("finding_id", ""))
+        suffix = fid[4:12] if fid.startswith("fnd_") else fid[:8]
+        p = finding.get("rank_p_value")
+        label = "—" if p is None else "%.4g" % float(p)
+        parts.append('<text x="%d" y="%.1f" text-anchor="end" '
+                     'font-family="ui-monospace,Menlo,monospace" font-size="11" '
+                     'fill="#5d5d60">%02d · %s</text>' % (L - 12, y + 4, index + 1, e(suffix)))
+        if p is not None:
+            x = px(float(p))
+            color = "#77797b" if finding.get("cell_power") == "underpowered" else "#315f7c"
+            parts.append('<line x1="%d" y1="%.1f" x2="%.1f" y2="%.1f" '
+                         'stroke="%s" stroke-opacity=".28"/>' % (L, y, x, y, color))
+            parts.append('<circle cx="%.1f" cy="%.1f" r="4.5" fill="%s"/>'
+                         % (x, y, color))
+            tx = min(x + 9, W - R - 42)
+            parts.append('<text x="%.1f" y="%.1f" '
+                         'font-family="ui-monospace,Menlo,monospace" font-size="10" '
+                         'fill="#36383a">%s</text>' % (tx, y + 3.5, e(label)))
+        else:
+            parts.append('<text x="%d" y="%.1f" font-family="ui-monospace,Menlo,monospace" '
+                         'font-size="10" fill="#5d5d60">not computed</text>' % (L, y + 3.5))
+    parts.append('<text x="%d" y="%d" font-family="ui-monospace,Menlo,monospace" '
+                 'font-size="11" fill="#5d5d60">WITHIN-CELL RANK P-VALUE · QUEUE ORDER</text>'
+                 % (L, H - 2))
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _scan_z_chart(test: dict) -> str:
+    """Show the single stored pooled z-score on a signed horizontal axis."""
+    z = test.get("z")
+    if z is None:
+        return '<p class="mono muted">No scan-level z-score was computed.</p>'
+    z = float(z)
+    lo, hi = min(-2.0, z - 1.0), max(2.0, z + 1.0)
+    span = hi - lo or 1.0
+    W, L, R, Y = 900, 80, 50, 100
+
+    def px(value):
+        return L + (W - L - R) * (value - lo) / span
+
+    ticks = [lo, lo + span * 0.25, lo + span * 0.5, lo + span * 0.75, hi]
+    parts = ['<svg viewBox="0 0 900 160" class="chart" role="img" '
+             'aria-label="Scan-level pooled z-score %.4g; zero marks no directional departure">' % z]
+    parts.append('<line x1="%d" y1="%d" x2="%d" y2="%d" stroke="#1d1f20"/>'
+                 % (L, Y, W - R, Y))
+    for tick in ticks:
+        x = px(tick)
+        parts.append('<line x1="%.1f" y1="%d" x2="%.1f" y2="%d" stroke="#b7b7ba" '
+                     'stroke-dasharray="3 4"/>' % (x, 48, x, Y + 8))
+        parts.append('<text x="%.1f" y="%d" text-anchor="middle" '
+                     'font-family="ui-monospace,Menlo,monospace" font-size="11" '
+                     'fill="#5d5d60">%.2f</text>' % (x, 130, tick))
+    zero_x, z_x = px(0.0), px(z)
+    parts.append('<line x1="%.1f" y1="%d" x2="%.1f" y2="%d" stroke="#77797b" '
+                 'stroke-width="1.5"/>' % (zero_x, 45, zero_x, Y + 9))
+    parts.append('<line x1="%.1f" y1="%d" x2="%.1f" y2="%d" stroke="#315f7c" '
+                 'stroke-width="3"/>' % (z_x, 42, z_x, Y + 9))
+    parts.append('<circle cx="%.1f" cy="%d" r="6" fill="#315f7c"/>' % (z_x, Y))
+    parts.append('<text x="%d" y="%d" font-family="ui-monospace,Menlo,monospace" '
+                 'font-size="11" fill="#5d5d60">ZERO</text>' % (max(L, zero_x - 15), 34))
+    parts.append('<text x="%d" y="%d" font-family="ui-monospace,Menlo,monospace" '
+                 'font-size="11" fill="#315f7c">OBSERVED z = %s</text>'
+                 % (L, 24, e("%.4g" % z)))
+    parts.append('<text x="%d" y="%d" font-family="ui-monospace,Menlo,monospace" '
+                 'font-size="11" fill="#5d5d60">SIGNED SCAN-LEVEL Z-SCORE</text>' % (L, 153))
+    parts.append("</svg>")
+    return "".join(parts)
+
+
