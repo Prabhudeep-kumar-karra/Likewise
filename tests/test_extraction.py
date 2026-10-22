@@ -21,7 +21,7 @@ from extract import backbones
 from extract import spec as espec
 from extract.abstain import (AGGREGATIONS, Calibration, fit_temperature,
                              floor_for_precision, span_confidence, temperature_scale)
-from extract.backends import DeterministicBackend
+from extract.backends import DeterministicBackend, _decode_word_level_spans
 from extract.contract import (ABSENT, ABSTAINED, OBSERVED, SILENT, ExtractedRecord,
                               FieldValue, Span, coverage)
 from extract.runner import extract_many, extract_one
@@ -189,6 +189,18 @@ def test_span_confidence_defaults_to_the_weakest_link():
 def test_span_confidence_rejects_a_non_probability():
     with pytest.raises(ValueError, match="not a probability"):
         span_confidence([0.5, 1.4])
+
+
+def test_model_decoder_uses_only_first_subtoken_prediction_per_word():
+    document = "reconsideration"
+    spans = _decode_word_level_spans(
+        document, [(0, 4), (4, 9), (9, 15)], [0, 0, 0],
+        ["B-a", "B-b", "I-b"], [0.8, 0.99, 0.99], {"a", "b"})
+
+    assert len(spans) == 1
+    assert spans[0].field == "a"
+    assert spans[0].text == document
+    assert spans[0].token_probs == (0.8,)
 
 
 def test_fitted_temperature_beats_the_unfitted_one_on_nll():

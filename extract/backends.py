@@ -133,6 +133,42 @@ class LiteralMatchBackend:
         return out
 
 
+def _decode_word_level_spans(document, offsets, word_ids, labels, confidences, wanted):
+    word_ends = {}
+    for offset, word_id in zip(offsets, word_ids, strict=True):
+        if word_id is not None and offset[0] != offset[1]:
+            word_ends[word_id] = max(word_ends.get(word_id, offset[1]), offset[1])
+
+    spans, cur, previous_word = [], None, None
+    for i, (offset, word_id) in enumerate(zip(offsets, word_ids, strict=True)):
+        if word_id is None or offset[0] == offset[1]:
+            cur = None
+            previous_word = None
+            continue
+        if word_id == previous_word:
+            continue
+        previous_word = word_id
+
+        lab = labels[i]
+        base = lab.split("-", 1)[-1] if "-" in lab else lab
+        if lab in ("O", "0") or base not in wanted:
+            cur = None
+            continue
+        begins = lab.startswith("B-") or cur is None or cur["field"] != base
+        if begins:
+            cur = {"field": base, "start": offset[0], "end": word_ends[word_id],
+                   "probs": [confidences[i]]}
+            spans.append(cur)
+        else:
+            cur["end"] = word_ends[word_id]
+            cur["probs"].append(confidences[i])
+
+    return [TokenScore(field=span["field"], value=document[span["start"]:span["end"]],
+                       token_probs=tuple(span["probs"]), start=span["start"],
+                       end=span["end"], text=document[span["start"]:span["end"]])
+            for span in spans]
+
+
 class TransformersBackend:
     """The real one. Imports torch and transformers lazily, inside the methods.
 
@@ -194,35 +230,18 @@ class TransformersBackend:
         enc = self._tok(document, return_tensors="pt", truncation=True,
                         max_length=self.max_length, return_offsets_mapping=True)
         offsets = enc.pop("offset_mapping")[0].tolist()
+        word_ids = enc.word_ids(batch_index=0)
         if self.device:
             enc = {k: v.to(self.device) for k, v in enc.items()}
         with torch.no_grad():
             logits = self._model(**enc).logits[0]
         id2label = self._model.config.id2label
         wanted = set(fields)
-        # BIO decoding: contiguous runs of the same label become one span, and the span
-        # carries the probability of EVERY token in it. Aggregation is not done here --
-        # abstain.py owns that, so the rule is testable without a model.
-        spans, cur = [], None
-        for i, off in enumerate(offsets):
-            if off[0] == off[1]:
-                continue                                  # special token
+        labels, confidences = [], []
+        for i in range(len(offsets)):
             probs = torch.softmax(logits[i], dim=-1)
             j = int(torch.argmax(probs))
-            lab = id2label[j]
-            base = lab.split("-", 1)[-1] if "-" in lab else lab
-            begins = lab.startswith("B-") or cur is None or cur["field"] != base
-            if lab in ("O", "0") or base not in wanted:
-                cur = None
-                continue
-            if begins:
-                cur = {"field": base, "start": off[0], "end": off[1],
-                       "probs": [float(probs[j])]}
-                spans.append(cur)
-            else:
-                cur["end"] = off[1]
-                cur["probs"].append(float(probs[j]))
-        return [TokenScore(field=s["field"], value=document[s["start"]:s["end"]],
-                           token_probs=tuple(s["probs"]), start=s["start"],
-                           end=s["end"], text=document[s["start"]:s["end"]])
-                for s in spans]
+            labels.append(id2label[int(j)])
+            confidences.append(float(probs[j]))
+        return _decode_word_level_spans(document, offsets, word_ids, labels,
+                                        confidences, wanted)
