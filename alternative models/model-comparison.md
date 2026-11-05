@@ -27,6 +27,6 @@ English WikiANN named-entity recognition pilot. All three runs used the same fix
 
 ModernBERT had the highest F1 and recall in this pilot. DeBERTa's precision was close to ModernBERT's, but its recall was substantially lower. All validation losses were finite after loading every backbone in float32.
 
-**This is a small general-NER pilot, not a legal extraction evaluation or a reliable model ranking.** The dataset is Wikipedia text, the sample is small, and training lasted one epoch. These metrics do not establish performance on Likewise fields, legal prose, negation, attribution, hedging, assertion precision, or coverage. Do not use this table to select a production extractor. A decision requires adjudicated legal-prose spans and held-out legal guard cases.
+The dataset is Wikipedia text, the sample is small, and training lasted one epoch. These metrics do not establish performance on Likewise fields, legal prose, negation, attribution, hedging, assertion precision, or coverage.
 
-The dataset card does not declare a license. Keep this pilot report local and do not redistribute the dataset or represent these scores as an official benchmark.
+**This is a small general-NER pilot. The dataset card does not declare a license and these score are not an official benchmark results.**
